@@ -1,9 +1,10 @@
+import base64
 import hashlib
-from typing import Any, List
 from pathlib import Path
 from sqlite3.dbapi2 import Connection
-from fastapi import APIRouter, Depends, Body, Request, Query, HTTPException, status
+from fastapi import APIRouter, Depends, Body, Request, status
 from fastapi.responses import HTMLResponse
+from urllib.parse import unquote
 
 from app.api import deps
 
@@ -57,7 +58,7 @@ def register(
     data = {}
     for param in payload.split('&'):
         k, v = param.split('=')
-        data[k] = v
+        data[k] = unquote(v)
 
     nickname = data['nickname'] if 'nickname' in payload else None
     name = data['name'] if 'name' in payload else None
@@ -97,20 +98,13 @@ def register(
     return HTMLResponse(content=deps.wrap_html('Регистрация', page), status_code=status.HTTP_200_OK)
 
 
-@router.get('/test/{test}')
-def test(
-        test: str,
-        request: Request
-):
-    params = request.query_params
-    print(test)
-    print(params)
-
-
 @router.get('/users')
 def all_users(
         db: Connection = Depends(deps.get_db)
 ):
+    """
+    Get all users
+    """
     cur = db.cursor()
 
     try:
@@ -135,3 +129,127 @@ def all_users(
         page = f'<p>SELECT nickname, status FROM users</p>\n<p>{e}</p>'
         return HTMLResponse(content=deps.wrap_html('Регистрация', page),
                             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@router.get('/users/{nickname}')
+def all_users(
+        nickname: str,
+        db: Connection = Depends(deps.get_db)
+):
+    """
+    Get specific user
+    """
+    # Hack: /users/' OR 1=1 UNION SELECT nickname, name from users UNION SELECT nickname, surname from users
+    # UNION SELECT nickname, pwd_hash from users UNION SELECT nickname, group_num from users--
+    cur = db.cursor()
+
+    try:
+        cur.execute(f"SELECT nickname, status FROM users WHERE nickname = '{nickname}'")
+        users = cur.fetchall()
+
+        page = ''
+        for user in users:
+            user_name = user[0]
+            user_status = user[1]
+            page += ('<table style="text-align:left;"><tr><th><div style="width:100px;height:100px;'
+                     'border-radius:50px;background-color:blue;color:white;vertical-align:middle;text-align:center;'
+                     f'font-size: 80px;">{user_name[0]}</div></th>'
+                     f'<th><h2>{user_name}</h2><p>{user_status}</p></th></tr></table>\n')
+
+        if page == '':
+            return HTMLResponse(content=deps.wrap_html(nickname, f'<h1>Пользователь {nickname} не существует</h1>'),
+                                status_code=status.HTTP_404_NOT_FOUND)
+
+    except Exception as e:
+        page = f"<p>SELECT nickname, status FROM users WHERE nickname = '{nickname}'</p>\n<p>{e}</p>"
+        return HTMLResponse(content=deps.wrap_html(nickname, page),
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    return HTMLResponse(content=deps.wrap_html(nickname, page), status_code=status.HTTP_200_OK)
+
+
+@router.get('/my-profile')
+def my_profile(
+        request: Request,
+        db: Connection = Depends(deps.get_db)
+):
+    """
+    Get user profile
+    """
+    # No authorisation
+    if request.headers.get('Authorization') is None:
+        page = '''<input type="text" id="login" name="login" placeholder="Логин"><br>
+<input type="text" id="password" name="password" placeholder="Пароль"><br>
+<button onclick="auth()">Войти</button>
+<script>
+    function auth() {
+        var credentials = btoa(`${document.getElementById('login').value}:${document.getElementById('password').value}`);
+        let xhr = new XMLHttpRequest();
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState == 4) {
+                var new_window = window.open('', '_self');
+                new_window.location.href='/my-profile'
+                new_window.document.write(xhr.responseText);
+            }
+        }
+        xhr.open('get', '/my-profile', true); 
+        xhr.setRequestHeader('Content-Type', 'text/html; charset=utf-8');
+        xhr.setRequestHeader('Authorization', `Basic ${credentials}`);
+        xhr.send();
+    }
+</script>'''
+        return HTMLResponse(content=deps.wrap_html('Мой профиль', page), status_code=status.HTTP_200_OK)
+
+    # Wrong auth method
+    if request.headers.get('Authorization').split(' ')[0] != 'Basic':
+        return HTMLResponse(content=deps.wrap_html('Мой профиль', '<h1>Неправильный метод авторизации</h1>'),
+                            status_code=status.HTTP_400_BAD_REQUEST)
+
+    # Try authorisation
+    try:
+        nickname, password = base64.b64decode(request.headers.get('Authorization')[6:]).decode('utf8').split(':')
+    except ValueError:
+        return HTMLResponse(content=deps.wrap_html('Мой профиль', '<h1>Неправильное имя пользователя или пароль</h1>'),
+                            status_code=status.HTTP_403_FORBIDDEN)
+
+    # Check nulls
+    if None in (nickname, password):
+        return HTMLResponse(content=deps.wrap_html('Мой профиль', '<h1>Неправильное имя пользователя или пароль</h1>'),
+                            status_code=status.HTTP_403_FORBIDDEN)
+
+    cur = db.cursor()
+    try:
+        cur.execute(
+            f"SELECT nickname, name, surname, group_num, status, pwd_hash FROM users WHERE nickname = '{nickname}'")
+        users = cur.fetchall()
+
+        # Check login and password
+        if len(users) == 0:
+            return HTMLResponse(content=deps.wrap_html('Мой профиль',
+                                                       '<h1>Неправильное имя пользователя или пароль</h1>'),
+                                status_code=status.HTTP_403_FORBIDDEN)
+
+        if nickname != users[0][0] or hashlib.sha256(password.encode('utf8')).hexdigest().upper() != users[0][5]:
+            return HTMLResponse(content=deps.wrap_html('Мой профиль',
+                                                       '<h1>Неправильное имя пользователя или пароль</h1>'),
+                                status_code=status.HTTP_403_FORBIDDEN)
+
+        # Show user's page
+        page = f'''<table style="text-align:left;">
+    <tr><th><div style="width:100px;height:100px;border-radius:50px;background-color:blue;color:white;vertical-align:middle;text-align:center;font-size: 80px;">{users[0][0][0]}</div></th>
+    <th>
+        <h2>{users[0][0]}</h2>
+        <div>Имя: {users[0][1]}</div>
+        <div>Фамилия: {users[0][2]}</div>
+        <div>Статус: {users[0][4]}</div>
+        <div>Номер группы: {users[0][3]}</div>
+    </th></tr>
+</table>'''
+
+    except Exception as e:
+        page = f"<p>SELECT nickname, name, surname, group_num, status, pwd_hash FROM users WHERE nickname = '{nickname}'</p>\n<p>{e}</p>"
+        return HTMLResponse(content=deps.wrap_html('Мой профиль', page),
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    return HTMLResponse(content=deps.wrap_html('Мой профиль', page),
+                        status_code=status.HTTP_200_OK)

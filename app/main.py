@@ -3,10 +3,12 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.api.api_v1.api import api_router
 from app.core.config import settings
+from app.utils.create_db import create_db
 
-app = FastAPI(
-    title=settings.PROJECT_NAME, openapi_url=f"{settings.API_V1_STR}/openapi.json"
-)
+
+create_db()
+
+app = FastAPI(title=settings.PROJECT_NAME, openapi_url='')
 
 # Set all CORS enabled origins
 if settings.BACKEND_CORS_ORIGINS:
@@ -14,8 +16,8 @@ if settings.BACKEND_CORS_ORIGINS:
         CORSMiddleware,
         allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=['*'],
+        allow_headers=['*'],
     )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
