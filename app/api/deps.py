@@ -14,7 +14,6 @@ def get_db() -> Generator:
 
 def wrap_html(title: str, body: str) -> str:
     return f'''<!DOCTYPE html>
-<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
