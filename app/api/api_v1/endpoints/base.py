@@ -16,7 +16,7 @@ def main() -> HTMLResponse:
     """
     Main page
     """
-    with open(Path('src', 'instructions.html'), 'r') as f:
+    with open(Path('src', 'instructions.html'), 'r', encoding='utf8')) as f:
         page = f.read()
 
     return HTMLResponse(content=deps.wrap_html('Главная страница', page), status_code=status.HTTP_200_OK)
