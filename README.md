@@ -31,3 +31,8 @@ source venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
+
+
+# Как заблокировать решение?
+
+В app/core/config.py записать регулярное выражение в BLOCKED_SOLUTIONS и перезапустить сервер.

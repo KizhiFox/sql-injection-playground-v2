@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     SERVER_NAME: str = 'SQL injection server'
     SERVER_HOST: AnyHttpUrl = 'http://0.0.0.0'
     SQLITE_FILENAME: str = 'sql_injection.db'
+    BLOCKED_SOLUTIONS: List[str] = [
+        r"^\/users\/.*' union select nickname, name \|\| \|\| surname \|\| \|\| group_num \|\| \|\| status \|\| \|\| pwd_hash \|\| from users --$",
+        r"^\/users\/.*' union select name, nickname from users union select surname,nickname from users union select pwd_hash, nickname from users union select status,nickname from users union select group_num,nickname from users--$"
+    ]
     # BACKEND_CORS_ORIGINS is a JSON-formatted list of origins
     # e.g: '["http://localhost", "http://localhost:4200", "http://localhost:3000", \
     # "http://localhost:8080", "http://local.dockertoolbox.tiangolo.com"]'

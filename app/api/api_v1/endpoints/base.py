@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import re
 from pathlib import Path
 from sqlite3.dbapi2 import Connection
 from fastapi import APIRouter, Depends, Body, Request, status
@@ -7,16 +8,35 @@ from fastapi.responses import HTMLResponse
 from urllib.parse import unquote
 
 from app.api import deps
+from app.core.config import settings
 
 router = APIRouter()
 
 
+def check_solution(request: str) -> bool:
+    """
+    Check if solution is blocked
+    """
+    request = request.replace(' ', '')
+    print(type(request), request)
+    for blocked_solution in settings.BLOCKED_SOLUTIONS:
+        if re.match(blocked_solution.replace(' ', ''), request):
+            return True
+
+    return False
+
+
 @router.get('/')
-def main() -> HTMLResponse:
+def main(request: Request) -> HTMLResponse:
     """
     Main page
     """
-    with open(Path('src', 'instructions.html'), 'r', encoding='utf8')) as f:
+    # Check if solution is blocked
+    if check_solution(request.url.path):
+        page = '<h1>Это решение заблокировано, попробуйте найти другое</h1>'
+        return HTMLResponse(content=deps.wrap_html('Главная страница', page), status_code=status.HTTP_403_FORBIDDEN)
+
+    with open(Path('src', 'instructions.html'), 'r', encoding='utf8') as f:
         page = f.read()
 
     return HTMLResponse(content=deps.wrap_html('Главная страница', page), status_code=status.HTTP_200_OK)
@@ -47,12 +67,18 @@ def register() -> HTMLResponse:
 
 @router.post('/register-result')
 def register(
+        request: Request,
         payload: str = Body(None),
         db: Connection = Depends(deps.get_db)
 ) -> HTMLResponse:
     """
     Register an account
     """
+    # Check if solution is blocked
+    if check_solution(request.url.path):
+        page = '<h1>Это решение заблокировано, попробуйте найти другое</h1>'
+        return HTMLResponse(content=deps.wrap_html('Регистрация', page), status_code=status.HTTP_403_FORBIDDEN)
+
     con = db.cursor()
 
     data = {}
@@ -100,11 +126,17 @@ def register(
 
 @router.get('/users')
 def all_users(
+        request: Request,
         db: Connection = Depends(deps.get_db)
 ):
     """
     Get all users
     """
+    # Check if solution is blocked
+    if check_solution(request.url.path):
+        page = '<h1>Это решение заблокировано, попробуйте найти другое</h1>'
+        return HTMLResponse(content=deps.wrap_html('Пользователи', page), status_code=status.HTTP_403_FORBIDDEN)
+
     cur = db.cursor()
 
     try:
@@ -127,12 +159,13 @@ def all_users(
 
     except Exception as e:
         page = f'<p>SELECT nickname, status FROM users</p>\n<p>{e}</p>'
-        return HTMLResponse(content=deps.wrap_html('Регистрация', page),
+        return HTMLResponse(content=deps.wrap_html('Пользователи', page),
                             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @router.get('/users/{nickname}')
 def all_users(
+        request: Request,
         nickname: str,
         db: Connection = Depends(deps.get_db)
 ):
@@ -141,6 +174,12 @@ def all_users(
     """
     # Hack: /users/' OR 1=1 UNION SELECT nickname, name from users UNION SELECT nickname, surname from users
     # UNION SELECT nickname, pwd_hash from users UNION SELECT nickname, group_num from users--
+    # Check if solution is blocked
+
+    if check_solution(request.url.path):
+        page = '<h1>Это решение заблокировано, попробуйте найти другое</h1>'
+        return HTMLResponse(content=deps.wrap_html(nickname, page), status_code=status.HTTP_403_FORBIDDEN)
+
     cur = db.cursor()
 
     try:
@@ -176,6 +215,11 @@ def my_profile(
     """
     Get user profile
     """
+    # Check if solution is blocked
+    if check_solution(request.url.path):
+        page = '<h1>Это решение заблокировано, попробуйте найти другое</h1>'
+        return HTMLResponse(content=deps.wrap_html('Мой профиль', page), status_code=status.HTTP_403_FORBIDDEN)
+
     # No authorisation
     if request.headers.get('Authorization') is None:
         page = '''<input type="text" id="login" name="login" placeholder="Логин"><br>
